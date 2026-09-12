@@ -32,9 +32,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
     <div className="modal-backdrop" onClick={onClose}>
       <div className="drain-modal-content" style={{ textAlign: 'left', maxWidth: '460px' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '1.25rem', fontWeight: 800, color: '#fff' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '1.25rem', fontWeight: 800 }}>
             <Settings size={22} color="var(--accent-cyan)" />
-            人生時間 ＆ 消費スピード設定
+            時間の設定
           </div>
           <button className="btn-icon" style={{ width: '32px', height: '32px' }} onClick={onClose}>
             <X size={18} />
@@ -43,7 +43,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>画面点灯時の消費スピード倍率 (Screen Drain Speed)</label>
+            <label>画面を見ている間の進み方</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <select
                 className="form-input"
@@ -51,20 +51,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
                 value={screenDrainSpeed}
                 onChange={(e) => setScreenDrainSpeed(Number(e.target.value))}
               >
-                <option value={1.0}>1.0x (標準: 実時間通りのスピード 1秒/秒)</option>
-                <option value={1.5}>1.5x (1.5倍速: スクリーンの警告度アップ)</option>
-                <option value={2.0}>2.0x (2.0倍速: 重度のスクリーン依存警告)</option>
-                <option value={0.5}>0.5x (0.5倍速: マイルド)</option>
+                <option value={1.0}>標準（実時間どおり）</option>
+                <option value={1.5}>少し速め（1.5倍）</option>
+                <option value={2.0}>速め（2倍）</option>
+                <option value={0.5}>ゆっくり（0.5倍）</option>
               </select>
               <Zap size={18} color="var(--accent-amber)" />
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              ※ 秒数の減少しやすさ・カウントスピードをここで調整できます
+              画面との付き合い方に合わせて調整できます。
             </span>
           </div>
 
           <div className="form-group">
-            <label>生年月日 (Birth Date)</label>
+            <label>生年月日</label>
             <input
               type="date"
               className="form-input"
@@ -75,7 +75,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
           </div>
 
           <div className="form-group">
-            <label>出生時間 (Birth Time)</label>
+            <label>出生時間</label>
             <input
               type="time"
               className="form-input"
@@ -86,7 +86,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ config, onSave, on
           </div>
 
           <div className="form-group">
-            <label>想定寿命 (Expected Age in Years)</label>
+            <label>想定する寿命（年）</label>
             <input
               type="number"
               min="1"

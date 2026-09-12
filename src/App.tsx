@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Hourglass, Settings, Volume2, VolumeX, Sparkles, ShieldCheck } from 'lucide-react';
+import { CalendarDays, Hourglass, Settings, Volume2, VolumeX, ShieldCheck } from 'lucide-react';
 import {
   DEFAULT_CONFIG,
   calculateRemainingLife,
@@ -13,6 +13,8 @@ import { DrainModal } from './components/DrainModal';
 import { ScreenStatus } from './components/ScreenStatus';
 import { HistoryLog } from './components/HistoryLog';
 import { SettingsModal } from './components/SettingsModal';
+
+const APP_BOOT_TIME = Date.now();
 
 export function App() {
   // Config state
@@ -53,10 +55,11 @@ export function App() {
 
   // Calculated remaining time details state
   const [remainingDetails, setRemainingDetails] = useState<RemainingTimeDetails>(() =>
-    calculateRemainingLife(config, totalScreenOnMs, totalPreservedLifeMs)
+    calculateRemainingLife(config, totalScreenOnMs, totalPreservedLifeMs, APP_BOOT_TIME)
   );
+  const [currentTimeMs, setCurrentTimeMs] = useState(APP_BOOT_TIME);
 
-  const lastTickTimeRef = useRef<number>(Date.now());
+  const lastTickTimeRef = useRef<number>(APP_BOOT_TIME);
   const isScreenOffHandledRef = useRef<boolean>(false);
 
   // Save config to localStorage
@@ -127,6 +130,7 @@ export function App() {
 
     const timer = setInterval(() => {
       const now = Date.now();
+      setCurrentTimeMs(now);
       const delta = now - lastTickTimeRef.current;
       lastTickTimeRef.current = now;
       localStorage.setItem('chronos_last_tick_time', String(now));
@@ -155,7 +159,7 @@ export function App() {
       if (audioEnabled && details.milliseconds < 35) {
         audioSynth.playTick();
       }
-    }, 33);
+    }, 100);
 
     // Page Lifecycle: Listen for OS freeze / resume
     const handleFreeze = () => {
@@ -190,26 +194,33 @@ export function App() {
     audioSynth.setEnabled(nextState);
   };
 
+  const todayStart = new Date(currentTimeMs);
+  todayStart.setHours(0, 0, 0, 0);
+  const tomorrowStart = new Date(todayStart);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  const dailyPercentageRemaining = Math.max(
+    0,
+    Math.min(100, ((tomorrowStart.getTime() - currentTimeMs) / (tomorrowStart.getTime() - todayStart.getTime())) * 100)
+  );
+
   return (
     <div className="app-container">
       {/* Header */}
       <header className="app-header">
         <div className="brand-title">
-          <Hourglass size={28} color="var(--accent-crimson)" />
+          <div className="brand-mark"><Hourglass size={22} /></div>
           <div>
-            <h1>CHRONOS</h1>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', letterSpacing: '0.15em' }}>
-              PHYSICAL SCREEN DETECTOR & LIFE TIMER
-            </div>
+            <h1>Chronos</h1>
+            <div className="brand-subtitle">自分の時間を、ていねいに</div>
           </div>
-          <div className="brand-badge" style={{ background: 'rgba(0, 255, 170, 0.12)', color: 'var(--accent-emerald)', borderColor: 'rgba(0, 255, 170, 0.3)' }}>
-            <div className="live-dot" style={{ backgroundColor: 'var(--accent-emerald)', boxShadow: '0 0 8px var(--accent-emerald)' }} /> HARDWARE SENSOR
+          <div className="brand-badge">
+            <div className="live-dot" /> 計測中
           </div>
         </div>
 
         <div className="header-actions">
           <button className="btn-icon" onClick={toggleAudio} title={audioEnabled ? 'サウンド OFF' : 'サウンド ON'}>
-            {audioEnabled ? <Volume2 size={20} color="var(--accent-cyan)" /> : <VolumeX size={20} color="var(--text-muted)" />}
+            {audioEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
           </button>
 
           <button className="btn-icon" onClick={() => setIsSettingsOpen(true)} title="設定">
@@ -221,31 +232,38 @@ export function App() {
       {/* Hero Timer Display */}
       <LifeTimer details={remainingDetails} isScreenActive={isPhysicalScreenOn} />
 
-      {/* Main Visual Dashboard */}
-      <div className="dashboard-grid">
-        {/* Left: Liquid Ring Visual Gauge */}
-        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="section-title" style={{ width: '100%' }}>
-            <Sparkles size={20} />
-            残り時間ビジュアルゲージ
+      {/* Lifetime and daily views */}
+      <div className="timeline-grid">
+        <div className="glass-panel gauge-panel gauge-panel-life">
+          <div className="section-title">
+            <Hourglass size={20} />
+            一生の時間
           </div>
           <GaugeCanvas percentage={remainingDetails.percentageRemaining} isDraining={isPhysicalScreenOn} />
         </div>
 
-        {/* Right: Screen Detector & Status */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <ScreenStatus isScreenActive={isPhysicalScreenOn} onSimulateScreenOff={handleSimulateScreenOff} />
-
-          <div className="glass-panel" style={{ background: 'rgba(0, 255, 170, 0.05)', borderColor: 'rgba(0, 255, 170, 0.25)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--accent-emerald)', fontWeight: 700, fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <ShieldCheck size={18} />
-              物理画面消灯判定ロジック
-            </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              <strong>画面点灯中（タブ切り替え含む）:</strong> マイナスカウント。画面が物理的に点灯している間はタブを離れていても人生が消費され続けます。<br/>
-              <strong>物理画面消灯（端末ロック/スリープ）:</strong> プラス還元。スマホやPCの画面自体が消灯・ロックされた時間のみが時間を護るプラス要素となります。
-            </p>
+        <div className="glass-panel gauge-panel gauge-panel-day">
+          <div className="section-title">
+            <CalendarDays size={20} />
+            今日の時間
           </div>
+          <GaugeCanvas percentage={dailyPercentageRemaining} isDraining={isPhysicalScreenOn} scope="day" />
+        </div>
+      </div>
+
+      {/* Screen Detector & Status */}
+      <div className="dashboard-grid status-grid">
+        <div>
+          <ScreenStatus isScreenActive={isPhysicalScreenOn} onSimulateScreenOff={handleSimulateScreenOff} />
+        </div>
+        <div className="glass-panel how-it-works-card">
+            <div className="info-heading">
+              <ShieldCheck size={18} />
+              このアプリの考え方
+            </div>
+            <p>
+              画面を見ている間は時間が進み、端末をロックしたりスリープすると、その時間を「守れた時間」として記録します。少し画面を置いて、自分のための時間を増やしてみましょう。
+            </p>
         </div>
       </div>
 

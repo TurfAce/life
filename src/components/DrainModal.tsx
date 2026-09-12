@@ -16,9 +16,7 @@ const POSITIVE_QUOTES = [
 ];
 
 export const DrainModal: React.FC<PreservedModalProps> = ({ preservedMs, onClose }) => {
-  const quote = React.useMemo(() => {
-    return POSITIVE_QUOTES[Math.floor(Math.random() * POSITIVE_QUOTES.length)];
-  }, []);
+  const quote = POSITIVE_QUOTES[Math.abs(Math.floor(preservedMs / 1000)) % POSITIVE_QUOTES.length];
 
   useEffect(() => {
     // Play serene uplifting chord when modal appears
@@ -27,65 +25,38 @@ export const DrainModal: React.FC<PreservedModalProps> = ({ preservedMs, onClose
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div
-        className="drain-modal-content"
-        style={{
-          background: 'radial-gradient(circle at center, #0a1f18 0%, #0d111a 100%)',
-          borderColor: 'var(--accent-emerald)',
-          boxShadow: '0 0 60px rgba(0, 255, 170, 0.3)'
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          className="drain-icon-wrapper"
-          style={{
-            background: 'rgba(0, 255, 170, 0.15)',
-            borderColor: 'var(--accent-emerald)',
-            color: 'var(--accent-emerald)',
-            boxShadow: '0 0 25px rgba(0, 255, 170, 0.5)'
-          }}
-        >
+      <div className="drain-modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="drain-icon-wrapper">
           <ShieldCheck size={38} />
         </div>
 
-        <div className="drain-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', color: '#fff' }}>
-          <Sparkles color="var(--accent-emerald)" size={22} />
-          画面消灯により人生時間を保護！
+        <div className="drain-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+          <Sparkles size={22} />
+          自分の時間が増えました
         </div>
 
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-          画面を消して現実世界を生きられていた時間:
+          画面から離れて過ごせた時間
         </p>
 
-        <div
-          className="drain-time-large"
-          style={{
-            color: 'var(--accent-emerald)',
-            textShadow: '0 0 20px rgba(0, 255, 170, 0.6)'
-          }}
-        >
+        <div className="drain-time-large">
           +{formatMsToReadable(preservedMs)}
         </div>
 
         <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-          ✨ 画面をオフにしていたこの時間はプラス要素として人生に還元されます。
+          この時間を「守れた時間」として記録しました。
         </p>
 
-        <div className="drain-quote" style={{ borderLeftColor: 'var(--accent-emerald)' }}>
+        <div className="drain-quote">
           {quote}
         </div>
 
         <button
           className="btn-primary"
-          style={{
-            width: '100%',
-            justifyContent: 'center',
-            background: 'linear-gradient(135deg, var(--accent-emerald) 0%, #009966 100%)',
-            boxShadow: '0 4px 15px rgba(0, 255, 170, 0.4)'
-          }}
+          style={{ width: '100%' }}
           onClick={onClose}
         >
-          <Sun size={18} /> スクリーンタイマーを再開する <ArrowRight size={18} />
+          <Sun size={18} /> 計測を再開する <ArrowRight size={18} />
         </button>
       </div>
     </div>
