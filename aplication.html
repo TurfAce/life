@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Photo to 3D Viewer & Manipulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #121214;
+      color: #f0f0f0;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #sidebar {
+      width: 320px;
+      background: #1c1d22;
+      border-right: 1px solid #2e3038;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      z-index: 10;
+      overflow-y: auto;
+    }
+    h2 { font-size: 1.1rem; font-weight: 600; }
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    label { font-size: 0.85rem; color: #a0a0a8; }
+    input[type="file"], input[type="range"], select, button {
+      width: 100%;
+    }
+    input[type="file"] {
+      background: #272932;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      border: 1px solid #3d404d;
+      color: #ccc;
+    }
+    button {
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      padding: 10px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #2563eb; }
+    button:disabled { background: #4b5563; cursor: not-allowed; }
+    .slider-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+    }
+    #viewport {
+      flex: 1;
+      position: relative;
+      background: radial-gradient(circle at center, #242630 0%, #0e0e11 100%);
+    }
+    #loading {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.6);
+      font-size: 1.1rem;
+      font-weight: 500;
+    }
+    .badge {
+      font-size: 0.75rem;
+      background: #333644;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-top: 4px;
+    }
+  </style>
+  <!-- Three.js & OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+  <aside id="sidebar">
+    <h2>Photo to 3D Viewer</h2>
+    <span class="badge">ドラッグで回転 / ホイールでズーム</span>
+
+    <div class="control-group">
+      <label>1. 画像を選択 / 撮影</label>
+      <input type="file" id="imageInput" accept="image/*" capture="environment">
+    </div>
+
+    <div class="control-group">
+      <label>2. 形状・深さ調整 (Depth)</label>
+      <div class="slider-row">
+        <span>立体感の強さ</span>
+        <span id="depthVal">1.5</span>
+      </div>
+      <input type="range" id="depthRange" min="0.1" max="5.0" step="0.1" value="1.5">
+    </div>
+
+    <div class="control-group">
+      <label>3. 表示スタイル</label>
+      <select id="materialMode">
+        <option value="textured">テクスチャ表示</option>
+        <option value="wireframe">ワイヤーフレーム</option>
+        <option value="normal">法線マップ表示 (Normal)</option>
+        <option value="clay">クレイモデル (立体確認用)</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label>4. 3Dモデル出力</label>
+      <button id="exportBtn" disabled>OBJ形式でダウンロード</button>
+    </div>
+  </aside>
+
+  <main id="viewport">
+    <div id="loading">3Dモデル生成中...</div>
+  </main>
+
+  <script>
+    // --- 3D Scene Setup ---
+    const container = document.getElementById('viewport');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(0, 0, 8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(5, 10, 7);
+    scene.add(dirLight);
+
+    const backLight = new THREE.DirectionalLight(0x6080ff, 0.6);
+    backLight.position.set(-5, -5, -5);
+    scene.add(backLight);
+
+    // --- State Variables ---
+    let currentMesh = null;
+    let baseTexture = null;
+    let originalImage = null;
+
+    // --- Mesh Generation from Image (Displacement/Relief) ---
+    function generate3DFromImage(img, depthScale = 1.5) {
+      if (currentMesh) {
+        scene.remove(currentMesh);
+        currentMesh.geometry.dispose();
+        if (Array.isArray(currentMesh.material)) {
+          currentMesh.material.forEach(m => m.dispose());
+        } else {
+          currentMesh.material.dispose();
+        }
+      }
+
+      // 画像のピクセルデータから輝度マップ（高さ情報）を生成
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const w = 256;
+      const h = 256;
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(img, 0, 0, w, h);
+      const imgData = ctx.getImageData(0, 0, w, h).data;
+
+      // 高密度プレーンジオメトリを作成
+      const aspect = img.width / img.height;
+      const geoWidth = aspect >= 1 ? 4 : 4 * aspect;
+      const geoHeight = aspect >= 1 ? 4 / aspect : 4;
+      const geometry = new THREE.PlaneGeometry(geoWidth, geoHeight, w - 1, h - 1);
+
+      const pos = geometry.attributes.position;
+
+      // 輝度に基づいて頂点をZ軸方向に変形（疑似3D化）
+      for (let i = 0; i < pos.count; i++) {
+        const r = imgData[i * 4];
+        const g = imgData[i * 4 + 1];
+        const b = imgData[i * 4 + 2];
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        
+        // 周辺部を滑らかに落とすためのエッジ減衰
+        const u = (i % w) / (w - 1);
+        const v = Math.floor(i / w) / (h - 1);
+        const edgeFactor = Math.sin(u * Math.PI) * Math.sin(v * Math.PI);
+
+        pos.setZ(i, Math.pow(lum, 1.2) * depthScale * edgeFactor);
+      }
+
+      geometry.computeVertexNormals();
+
+      baseTexture = new THREE.CanvasTexture(img);
+      baseTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+
+      const material = new THREE.MeshStandardMaterial({
+        map: baseTexture,
+        roughness: 0.4,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+      });
+
+      currentMesh = new THREE.Mesh(geometry, material);
+      scene.add(currentMesh);
+
+      // モデルを中心にセンタリング
+      geometry.center();
+      document.getElementById('exportBtn').disabled = false;
+    }
+
+    // --- Event Listeners ---
+    const imageInput = document.getElementById('imageInput');
+    const depthRange = document.getElementById('depthRange');
+    const depthVal = document.getElementById('depthVal');
+    const materialMode = document.getElementById('materialMode');
+    const exportBtn = document.getElementById('exportBtn');
+    const loading = document.getElementById('loading');
+
+    imageInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      loading.style.display = 'flex';
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          originalImage = img;
+          generate3DFromImage(img, parseFloat(depthRange.value));
+          loading.style.display = 'none';
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    depthRange.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      depthVal.textContent = val.toFixed(1);
+      if (originalImage) {
+        generate3DFromImage(originalImage, val);
+        updateMaterialMode(materialMode.value);
+      }
+    });
+
+    function updateMaterialMode(mode) {
+      if (!currentMesh) return;
+      currentMesh.material.wireframe = false;
+
+      if (mode === 'textured') {
+        currentMesh.material = new THREE.MeshStandardMaterial({
+          map: baseTexture,
+          roughness: 0.4,
+          side: THREE.DoubleSide
+        });
+      } else if (mode === 'wireframe') {
+        currentMesh.material = new THREE.MeshStandardMaterial({
+          wireframe: true,
+          color: 0x3b82f6
+        });
+      } else if (mode === 'normal') {
+        currentMesh.material = new THREE.MeshNormalMaterial({ side: THREE.DoubleSide });
+      } else if (mode === 'clay') {
+        currentMesh.material = new THREE.MeshStandardMaterial({
+          color: 0xe0e0e0,
+          roughness: 0.8,
+          side: THREE.DoubleSide
+        });
+      }
+    }
+
+    materialMode.addEventListener('change', (e) => {
+      updateMaterialMode(e.target.value);
+    });
+
+    // --- Simple OBJ Exporter ---
+    exportBtn.addEventListener('click', () => {
+      if (!currentMesh) return;
+      const geo = currentMesh.geometry;
+      const pos = geo.attributes.position;
+      const uv = geo.attributes.uv;
+
+      let objOutput = "# Exported 3D Model\n";
+      for (let i = 0; i < pos.count; i++) {
+        objOutput += `v ${pos.getX(i).toFixed(4)} ${pos.getY(i).toFixed(4)} ${pos.getZ(i).toFixed(4)}\n`;
+      }
+      for (let i = 0; i < uv.count; i++) {
+        objOutput += `vt ${uv.getX(i).toFixed(4)} ${uv.getY(i).toFixed(4)}\n`;
+      }
+      const index = geo.index;
+      if (index) {
+        for (let i = 0; i < index.count; i += 3) {
+          const a = index.getX(i) + 1;
+          const b = index.getX(i + 1) + 1;
+          const c = index.getX(i + 2) + 1;
+          objOutput += `f ${a}/${a} ${b}/${b} ${c}/${c}\n`;
+        }
+      }
+
+      const blob = new Blob([objOutput], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'model.obj';
+      a.click();
+    });
+
+    // Resize handling
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
