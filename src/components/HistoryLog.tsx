@@ -1,14 +1,15 @@
-import React from 'react';
-import { History, ShieldCheck, Trash2 } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { History, ShieldCheck, Trash2, X } from 'lucide-react';
 import { formatMsToReadable } from '../utils/lifeCalc';
 import type { SessionLog } from '../utils/lifeCalc';
 
 interface HistoryLogProps {
   logs: SessionLog[];
   onClearLogs: () => void;
+  onClose: () => void;
 }
 
-export const HistoryLog: React.FC<HistoryLogProps> = ({ logs, onClearLogs }) => {
+export const HistoryLog: React.FC<HistoryLogProps> = ({ logs, onClearLogs, onClose }) => {
   const totalPreservedMs = logs
     .filter((log) => log.type === 'SCREEN_OFF_PRESERVED')
     .reduce((acc, log) => acc + log.durationMs, 0);
@@ -18,30 +19,27 @@ export const HistoryLog: React.FC<HistoryLogProps> = ({ logs, onClearLogs }) => 
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
   return (
-    <div className="glass-panel">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-        <div className="section-title" style={{ marginBottom: 0 }}>
+    <section className="history-content">
+      <div className="dialog-header">
+        <h2>
           <History size={20} />
           画面を離れた記録
-        </div>
-        {logs.length > 0 && (
-          <button
-            className="btn-icon"
-            style={{ width: '32px', height: '32px' }}
-            onClick={onClearLogs}
-            title="履歴をクリア"
-          >
-            <Trash2 size={16} color="var(--text-muted)" />
-          </button>
-        )}
+        </h2>
+        <button type="button" className="btn-icon btn-icon-small" onClick={onClose} aria-label="記録を閉じる" autoFocus><X size={18} /></button>
       </div>
 
-      <div style={{ marginBottom: '1rem', background: '#edf6f2', padding: '0.75rem 1rem', borderRadius: 'var(--radius-sm)', border: '1px solid #d8e8e2' }}>
-        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>これまでに守れた時間 </span>
-        <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent-emerald)', marginLeft: '0.5rem', fontSize: '1rem' }}>
-          +{formatMsToReadable(totalPreservedMs)}
-        </strong>
+      <div className="history-total">
+        <span>画面を離れた時間（累計）</span>
+        <strong>{formatMsToReadable(totalPreservedMs)}</strong>
       </div>
 
       <div className="history-list">
@@ -53,16 +51,21 @@ export const HistoryLog: React.FC<HistoryLogProps> = ({ logs, onClearLogs }) => 
           logs.map((log) => (
             <div key={log.id} className="history-item">
               <div className="history-meta">
-                <ShieldCheck size={16} color="var(--accent-emerald)" />
+                <ShieldCheck size={16} />
                 <span>{formatTimestamp(log.endTime)} 復帰</span>
               </div>
-              <div className="history-deduction" style={{ color: 'var(--accent-emerald)' }}>
+              <div className="history-deduction">
                 +{log.formattedDuration}
               </div>
             </div>
           ))
         )}
       </div>
-    </div>
+      {logs.length > 0 && (
+        <button type="button" className="clear-history-button" onClick={onClearLogs}>
+          <Trash2 size={15} /> 履歴を消去
+        </button>
+      )}
+    </section>
   );
 };

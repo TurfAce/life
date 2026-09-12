@@ -1,78 +1,118 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type { RemainingTimeDetails } from '../utils/lifeCalc';
-import { formatMsToReadable } from '../utils/lifeCalc';
-import { ShieldCheck, Flame } from 'lucide-react';
+import { GaugeCanvas } from './GaugeCanvas';
+
+export type TimeScope = 'day' | 'life';
 
 interface LifeTimerProps {
+  scope: TimeScope;
   details: RemainingTimeDetails;
+  dailyRemainingMs: number;
+  dailyTotalMs: number;
+  percentage: number;
   isScreenActive: boolean;
+  onScopeChange: (scope: TimeScope) => void;
 }
 
-export const LifeTimer: React.FC<LifeTimerProps> = ({ details, isScreenActive }) => {
-  const padZero = (num: number, length: number = 2) => {
-    return String(num).padStart(length, '0');
-  };
+const DAY_MS = 24 * 60 * 60 * 1000;
+const YEAR_MS = 365.25 * DAY_MS;
+
+function formatToday(ms: number) {
+  if (ms < 60_000) return '1分未満';
+  const totalMinutes = Math.floor(ms / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}時間${minutes}分` : `${minutes}分`;
+}
+
+function formatLife(ms: number) {
+  if (ms >= YEAR_MS) return `約${Math.floor(ms / YEAR_MS)}年`;
+  if (ms >= DAY_MS) return `${Math.floor(ms / DAY_MS)}日`;
+  if (ms >= 60 * 60 * 1000) return `${Math.floor(ms / (60 * 60 * 1000))}時間`;
+  return '1時間未満';
+}
+
+export const LifeTimer: React.FC<LifeTimerProps> = ({
+  scope,
+  details,
+  dailyRemainingMs,
+  dailyTotalMs,
+  percentage,
+  isScreenActive,
+  onScopeChange
+}) => {
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const isDay = scope === 'day';
+  const remainingMs = isDay ? dailyRemainingMs : details.remainingMs;
+  const roundedPercentage = Math.max(0, Math.min(100, Math.round(percentage)));
+
+  const dayRemainingMinutes = Math.max(0, Math.floor(dailyRemainingMs / 60_000));
+  const dayElapsedMinutes = Math.max(0, Math.floor((dailyTotalMs - dailyRemainingMs) / 60_000));
+  const dayHours = Math.floor(dayRemainingMinutes / 60);
+  const dayMinutes = dayRemainingMinutes % 60;
 
   return (
-    <div className="glass-panel timer-hero-card glass-panel-glow">
-      <div className="hero-status">
-        {isScreenActive ? (
-          <span className="status-pill off">
-            <Flame size={14} /> 画面を見ている時間
-          </span>
+    <section className="focus-panel" aria-labelledby="remaining-time-title">
+      <div className="scope-switch" role="tablist" aria-label="表示する時間">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={isDay}
+          className={isDay ? 'is-selected' : ''}
+          onClick={() => onScopeChange('day')}
+        >
+          今日
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!isDay}
+          className={!isDay ? 'is-selected' : ''}
+          onClick={() => onScopeChange('life')}
+        >
+          一生
+        </button>
+      </div>
+
+      <p className="remaining-kicker" id="remaining-time-title">
+        {isDay ? '今日の残り時間' : '一生の残り時間'}
+      </p>
+      <div className="remaining-primary" aria-live="polite">
+        {isDay ? formatToday(remainingMs) : formatLife(remainingMs)}
+      </div>
+
+      <GaugeCanvas percentage={percentage} isDraining={isScreenActive} />
+
+      <p className="remaining-percentage">残り {roundedPercentage}%</p>
+      <button
+        type="button"
+        className="detail-toggle"
+        aria-expanded={isDetailOpen}
+        aria-controls="time-detail"
+        onClick={() => setIsDetailOpen((open) => !open)}
+      >
+        時間の詳細
+        <ChevronDown size={16} className={isDetailOpen ? 'is-open' : ''} />
+      </button>
+
+      <div id="time-detail" className={`time-detail ${isDetailOpen ? 'is-open' : ''}`} hidden={!isDetailOpen}>
+        {isDay ? (
+          <dl>
+            <div><dt>残り</dt><dd>{dayHours}時間 {dayMinutes}分</dd></div>
+            <div><dt>経過</dt><dd>{Math.floor(dayElapsedMinutes / 60)}時間 {dayElapsedMinutes % 60}分</dd></div>
+          </dl>
         ) : (
-          <span className="status-pill">
-            <ShieldCheck size={14} /> 自分の時間を守っています
-          </span>
+          <dl>
+            <div><dt>残り</dt><dd>{details.years}年 {details.days}日 {details.hours}時間 {details.minutes}分</dd></div>
+            <div><dt>想定期間に対する残り</dt><dd>{roundedPercentage}%</dd></div>
+          </dl>
         )}
       </div>
 
-      <div className="hero-subtitle">あなたに残された時間</div>
-
-      {/* Hero Digits with 1st decimal place for seconds (.X) */}
-      <div className="hero-timer-digits">
-        {details.years}y {padZero(details.days, 3)}d {padZero(details.hours)}:{padZero(details.minutes)}:{padZero(details.seconds)}
-        <span className="decisecond">
-          .{details.decisecond}s
-        </span>
-      </div>
-
-      {/* Screen On / Off Impact Metrics */}
-      <div className="impact-metrics">
-        <div className="impact-chip impact-chip-used">
-          <span>画面を見ていた時間</span>
-          <strong>
-            -{formatMsToReadable(details.screenOnDeductedMs)}
-          </strong>
-        </div>
-
-        <div className="impact-chip impact-chip-saved">
-          <span>画面を離れた時間</span>
-          <strong>
-            +{formatMsToReadable(details.preservedLifeMs)}
-          </strong>
-        </div>
-      </div>
-
-      {/* Grid Breakdown */}
-      <div className="time-breakdown-grid">
-        <div className="time-unit-box">
-          <div className="time-unit-val">{details.years}</div>
-          <div className="time-unit-lbl">年</div>
-        </div>
-        <div className="time-unit-box">
-          <div className="time-unit-val">{padZero(details.days, 3)}</div>
-          <div className="time-unit-lbl">日</div>
-        </div>
-        <div className="time-unit-box">
-          <div className="time-unit-val">{padZero(details.hours)}:{padZero(details.minutes)}</div>
-          <div className="time-unit-lbl">時・分</div>
-        </div>
-        <div className="time-unit-box">
-          <div className="time-unit-val">{padZero(details.seconds)}.{details.decisecond}</div>
-          <div className="time-unit-lbl">秒</div>
-        </div>
-      </div>
-    </div>
+      <p className="scope-note">
+        {isDay ? '今日の24時までの時間です' : '設定した寿命をもとにした目安です'}
+      </p>
+    </section>
   );
 };

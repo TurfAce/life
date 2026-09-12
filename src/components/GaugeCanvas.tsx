@@ -1,105 +1,142 @@
-import React, { useId } from 'react';
+import React, { memo, useId } from 'react';
 
 interface GaugeCanvasProps {
   percentage: number;
   isDraining?: boolean;
-  scope?: 'life' | 'day';
 }
 
-/**
- * A frame-less hourglass: only the floating contents are visible.
- * It is intentionally static so frequent timer updates never cause flashing.
- */
-export const GaugeCanvas: React.FC<GaugeCanvasProps> = ({
-  percentage,
-  isDraining = false,
-  scope = 'life'
-}) => {
-  const gradientId = useId().replace(/:/g, '');
-  const shadowId = useId().replace(/:/g, '');
-  // Updating the shape only at visible 0.1% steps prevents needless repaints.
-  const clamped = Math.round(Math.max(0, Math.min(100, percentage)) * 10) / 10;
-  const remaining = clamped / 100;
+const FIXED_TOP_GRAINS = [
+  [-0.76, -2, 2.2], [-0.61, 2, 1.5], [-0.44, -1, 1.8], [-0.28, 3, 1.3],
+  [-0.09, 1, 1.7], [0.12, 3, 1.2], [0.31, -1, 1.8], [0.49, 2, 1.4],
+  [0.65, 0, 1.9], [0.8, 3, 1.2]
+] as const;
+
+const FIXED_MOUND_GRAINS = [
+  [-62, 19, 1.5], [-48, 12, 1.9], [-33, 8, 1.2], [-20, 4, 1.7],
+  [-7, 1, 1.3], [9, 3, 1.8], [24, 7, 1.2], [39, 11, 1.7], [55, 17, 1.3]
+] as const;
+
+function GaugeCanvasComponent({ percentage, isDraining = false }: GaugeCanvasProps) {
+  const id = useId().replace(/:/g, '');
+  const rawPercentage = Math.max(0, Math.min(100, percentage));
+  const displayPercentage = Math.round(rawPercentage * 10) / 10;
+  const remaining = rawPercentage / 100;
   const elapsed = 1 - remaining;
 
-  // The upper contents shrink down toward the neck.
-  const topSurfaceY = 42 + elapsed * 96;
-  const topHalfWidth = 76 * remaining + 3;
+  const centerX = 160;
+  const topY = 35 + elapsed * 92;
+  const topHalfWidth = Math.max(7, 84 * Math.pow(remaining, 0.72));
+  const topDepth = Math.max(10, 139 - topY);
+  const moundTopY = 247 - elapsed * 76;
+  const fallDistance = Math.max(8, moundTopY - 142);
 
-  // Used time gathers as a soft mound in the lower chamber.
-  const moundTopY = 274 - elapsed * 98;
-  const moundShoulderY = moundTopY + 27;
-  const colorA = scope === 'life' ? '#75a899' : '#d5a965';
-  const colorB = scope === 'life' ? '#477c70' : '#b9813f';
-  const label = scope === 'life' ? '人生の残り' : '今日の残り';
+  const topPath = `
+    M ${centerX - topHalfWidth} ${topY}
+    C ${centerX - topHalfWidth * 0.7} ${topY - 3}, ${centerX - topHalfWidth * 0.28} ${topY + 5}, ${centerX} ${topY + 3}
+    C ${centerX + topHalfWidth * 0.24} ${topY + 6}, ${centerX + topHalfWidth * 0.66} ${topY - 2}, ${centerX + topHalfWidth} ${topY + 1}
+    C ${centerX + topHalfWidth + 2} ${topY + topDepth * 0.14}, ${centerX + topHalfWidth * 0.94} ${topY + topDepth * 0.29}, ${centerX + topHalfWidth * 0.82} ${topY + topDepth * 0.4}
+    C ${centerX + topHalfWidth * 0.7} ${topY + topDepth * 0.51}, ${centerX + topHalfWidth * 0.58} ${topY + topDepth * 0.63}, ${centerX + topHalfWidth * 0.42} ${topY + topDepth * 0.72}
+    C ${centerX + topHalfWidth * 0.29} ${topY + topDepth * 0.82}, ${centerX + 14} ${topY + topDepth * 0.92}, ${centerX + 7} 139
+    Q ${centerX} 146 ${centerX - 7} 139
+    C ${centerX - 15} ${topY + topDepth * 0.91}, ${centerX - topHalfWidth * 0.3} ${topY + topDepth * 0.82}, ${centerX - topHalfWidth * 0.44} ${topY + topDepth * 0.72}
+    C ${centerX - topHalfWidth * 0.61} ${topY + topDepth * 0.61}, ${centerX - topHalfWidth * 0.71} ${topY + topDepth * 0.48}, ${centerX - topHalfWidth * 0.84} ${topY + topDepth * 0.37}
+    C ${centerX - topHalfWidth * 0.95} ${topY + topDepth * 0.25}, ${centerX - topHalfWidth - 2} ${topY + topDepth * 0.12}, ${centerX - topHalfWidth} ${topY}
+    Z`;
+
+  const moundPath = `
+    M 77 252
+    C 92 246, 105 ${moundTopY + 25}, 127 ${moundTopY + 12}
+    C 141 ${moundTopY + 4}, 150 ${moundTopY + 1}, 160 ${moundTopY}
+    C 174 ${moundTopY + 1}, 185 ${moundTopY + 8}, 197 ${moundTopY + 14}
+    C 218 ${moundTopY + 25}, 230 245, 243 252
+    C 205 263, 117 264, 77 252 Z`;
+
+  const fallStyle = { '--fall-distance': `${fallDistance}px` } as React.CSSProperties;
 
   return (
-    <div className={`sand-gauge sand-gauge-${scope}`} aria-label={`${label} ${clamped.toFixed(1)}パーセント`}>
-      <svg className="sand-gauge-art" viewBox="0 0 300 330" role="img" aria-hidden="true">
+    <div className="sand-sculpture" aria-label={`残り時間 ${Math.round(displayPercentage)}パーセント`}>
+      <svg className="sand-sculpture-art" viewBox="0 0 320 280" aria-hidden="true">
         <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stopColor={colorA} />
-            <stop offset="1" stopColor={colorB} />
+          <linearGradient id={`${id}-sand`} x1="0" y1="0" x2="0.8" y2="1">
+            <stop offset="0" stopColor="#e3c187" />
+            <stop offset="0.52" stopColor="#c99b5a" />
+            <stop offset="1" stopColor="#9f703d" />
           </linearGradient>
-          <filter id={shadowId} x="-30%" y="-30%" width="160%" height="180%">
-            <feDropShadow dx="0" dy="12" stdDeviation="10" floodColor={colorB} floodOpacity="0.18" />
+          <pattern id={`${id}-texture`} width="17" height="17" patternUnits="userSpaceOnUse">
+            <circle cx="3" cy="4" r="1.1" fill="#fff7e7" opacity=".48" />
+            <circle cx="12" cy="7" r=".8" fill="#76502b" opacity=".25" />
+            <circle cx="7" cy="14" r=".7" fill="#fff" opacity=".35" />
+          </pattern>
+          <filter id={`${id}-soft-shadow`} x="-25%" y="-25%" width="150%" height="170%">
+            <feDropShadow dx="0" dy="8" stdDeviation="7" floodColor="#76522e" floodOpacity=".14" />
           </filter>
         </defs>
 
-        <ellipse cx="150" cy="300" rx="78" ry="11" fill={colorB} opacity="0.09" />
+        <ellipse className="sand-ground-shadow" cx="160" cy="263" rx="82" ry="9" />
 
-        <g fill={`url(#${gradientId})`} filter={`url(#${shadowId})`}>
-          {remaining > 0.005 && (
-            <path
-              d={`M ${150 - topHalfWidth} ${topSurfaceY}
-                  Q 150 ${topSurfaceY - 8} ${150 + topHalfWidth} ${topSurfaceY}
-                  C ${207 - elapsed * 49} ${topSurfaceY + 26}, 171 132, 156 148
-                  Q 150 154 144 148
-                  C 129 132, ${93 + elapsed * 49} ${topSurfaceY + 26}, ${150 - topHalfWidth} ${topSurfaceY} Z`}
-            />
+        <g filter={`url(#${id}-soft-shadow)`}>
+          {rawPercentage > 0 && (
+            <g>
+              <path d={topPath} fill={`url(#${id}-sand)`} />
+              <path d={topPath} fill={`url(#${id}-texture)`} opacity=".62" />
+              <g className="surface-grains" fill="#9f703d">
+                {FIXED_TOP_GRAINS.map(([offset, y, radius], index) => (
+                  <circle
+                    key={index}
+                    cx={centerX + offset * topHalfWidth}
+                    cy={topY + y}
+                    r={radius}
+                    opacity={0.34 + (index % 3) * 0.12}
+                  />
+                ))}
+              </g>
+            </g>
           )}
 
-          {elapsed > 0.005 && (
-            <path
-              d={`M 69 279
-                  Q 150 294 231 279
-                  C 220 258, 199 ${moundShoulderY}, 169 ${moundTopY + 7}
-                  Q 150 ${moundTopY - 7} 131 ${moundTopY + 7}
-                  C 101 ${moundShoulderY}, 80 258, 69 279 Z`}
-            />
+          {elapsed > 0.0001 && (
+            <g>
+              <path d={moundPath} fill={`url(#${id}-sand)`} />
+              <path d={moundPath} fill={`url(#${id}-texture)`} opacity=".55" />
+              <g fill="#f5dfba">
+                {FIXED_MOUND_GRAINS.map(([x, y, radius], index) => (
+                  <circle key={index} cx={centerX + x} cy={moundTopY + y} r={radius} opacity=".56" />
+                ))}
+              </g>
+            </g>
           )}
         </g>
 
-        {isDraining && remaining > 0.005 && elapsed > 0.005 && (
-          <g className="sand-flow" color={colorB}>
+        {isDraining && rawPercentage > 0 && elapsed > 0.0001 && (
+          <g className="sand-flow" style={fallStyle}>
             <line
               className="sand-stream"
-              x1="150"
-              y1="148"
-              x2="150"
-              y2={Math.max(156, moundTopY + 3)}
-              stroke="currentColor"
-              strokeWidth="3"
+              x1="160"
+              y1="141"
+              x2="160"
+              y2={moundTopY + 2}
+              stroke="#bd8d50"
+              strokeWidth="2.4"
               strokeLinecap="round"
-              strokeDasharray="2 5"
+              strokeDasharray="1.5 4"
             />
-            <g fill="currentColor">
-              <circle className="sand-grain sand-grain-1" cx="144" cy="153" r="2.1" />
-              <circle className="sand-grain sand-grain-2" cx="156" cy="156" r="1.6" />
-              <circle className="sand-grain sand-grain-3" cx="147" cy="160" r="1.3" />
-              <circle className="sand-grain sand-grain-4" cx="153" cy="151" r="1.8" />
+            <g fill="#c99b5a">
+              <circle className="falling-grain grain-a" cx="155" cy="144" r="1.7" />
+              <circle className="falling-grain grain-b" cx="163" cy="143" r="1.2" />
+              <circle className="falling-grain grain-c" cx="158" cy="146" r="1.4" />
+              <circle className="falling-grain grain-d" cx="162" cy="145" r="1" />
+            </g>
+            <g className="landing-grains" fill="#9f703d">
+              <circle className="landing-grain landing-a" cx="158" cy={moundTopY + 2} r="1.5" />
+              <circle className="landing-grain landing-b" cx="162" cy={moundTopY + 3} r="1.2" />
             </g>
           </g>
         )}
       </svg>
-
-      <div className="sand-gauge-value">{clamped.toFixed(1)}%</div>
-      <div className="sand-gauge-label">{label}</div>
-      <div className="sand-gauge-note">
-        {scope === 'life'
-          ? '上が残された時間、下が歩んできた時間です'
-          : '0時から24時までの、今日という一日です'}
-      </div>
     </div>
   );
-};
+}
+
+export const GaugeCanvas = memo(GaugeCanvasComponent, (previous, next) => (
+  Math.round(previous.percentage * 10) === Math.round(next.percentage * 10)
+  && previous.isDraining === next.isDraining
+));

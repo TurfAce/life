@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { CalendarDays, Hourglass, Settings, Volume2, VolumeX, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Hourglass, Settings } from 'lucide-react';
 import {
   DEFAULT_CONFIG,
   calculateRemainingLife,
@@ -8,15 +8,16 @@ import {
 import type { UserConfig, SessionLog, RemainingTimeDetails } from './utils/lifeCalc';
 import { audioSynth } from './utils/AudioEffects';
 import { LifeTimer } from './components/LifeTimer';
-import { GaugeCanvas } from './components/GaugeCanvas';
 import { DrainModal } from './components/DrainModal';
-import { ScreenStatus } from './components/ScreenStatus';
 import { HistoryLog } from './components/HistoryLog';
 import { SettingsModal } from './components/SettingsModal';
+import { FocusSession } from './components/FocusSession';
+import type { TimeScope } from './components/LifeTimer';
 
 const APP_BOOT_TIME = Date.now();
 
 export function App() {
+  const [focusResetKey, setFocusResetKey] = useState(0);
   // Config state
   const [config, setConfig] = useState<UserConfig>(() => {
     const saved = localStorage.getItem('chronos_config');
@@ -52,6 +53,8 @@ export function App() {
 
   // Settings modal open state
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false);
+  const [timeScope, setTimeScope] = useState<TimeScope>('day');
 
   // Calculated remaining time details state
   const [remainingDetails, setRemainingDetails] = useState<RemainingTimeDetails>(() =>
@@ -70,6 +73,8 @@ export function App() {
 
   // Reset all data
   const handleResetAll = () => {
+    localStorage.removeItem('chronos_focus_v1');
+    setFocusResetKey((value) => value + 1);
     setConfig(DEFAULT_CONFIG);
     setLogs([]);
     setTotalScreenOnMs(0);
@@ -194,6 +199,10 @@ export function App() {
     audioSynth.setEnabled(nextState);
   };
 
+  const closePreservedToast = useCallback(() => setRecentPreservedMs(null), []);
+  const closeSettings = useCallback(() => setIsSettingsOpen(false), []);
+  const closeHistory = useCallback(() => setIsHistoryOpen(false), []);
+
   const todayStart = new Date(currentTimeMs);
   todayStart.setHours(0, 0, 0, 0);
   const tomorrowStart = new Date(todayStart);
@@ -213,76 +222,63 @@ export function App() {
             <h1>Chronos</h1>
             <div className="brand-subtitle">自分の時間を、ていねいに</div>
           </div>
-          <div className="brand-badge">
-            <div className="live-dot" /> 計測中
-          </div>
         </div>
 
         <div className="header-actions">
-          <button className="btn-icon" onClick={toggleAudio} title={audioEnabled ? 'サウンド OFF' : 'サウンド ON'}>
-            {audioEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
-          </button>
-
-          <button className="btn-icon" onClick={() => setIsSettingsOpen(true)} title="設定">
+          <button className="btn-icon" onClick={() => setIsSettingsOpen(true)} title="設定" aria-label="設定を開く">
             <Settings size={20} />
           </button>
         </div>
       </header>
 
-      {/* Hero Timer Display */}
-      <LifeTimer details={remainingDetails} isScreenActive={isPhysicalScreenOn} />
+      <main className="main-content">
+        <FocusSession key={focusResetKey} />
+        <LifeTimer
+          scope={timeScope}
+          details={remainingDetails}
+          dailyRemainingMs={tomorrowStart.getTime() - currentTimeMs}
+          dailyTotalMs={tomorrowStart.getTime() - todayStart.getTime()}
+          percentage={timeScope === 'day' ? dailyPercentageRemaining : remainingDetails.percentageRemaining}
+          isScreenActive={isPhysicalScreenOn}
+          onScopeChange={setTimeScope}
+        />
 
-      {/* Lifetime and daily views */}
-      <div className="timeline-grid">
-        <div className="glass-panel gauge-panel gauge-panel-life">
-          <div className="section-title">
-            <Hourglass size={20} />
-            一生の時間
+        <section className="activity-summary" aria-label="画面を離れた記録">
+          <div>
+            <p>画面を離れた時間（累計）</p>
+            <strong>{formatMsToReadable(totalPreservedLifeMs)}</strong>
           </div>
-          <GaugeCanvas percentage={remainingDetails.percentageRemaining} isDraining={isPhysicalScreenOn} />
-        </div>
-
-        <div className="glass-panel gauge-panel gauge-panel-day">
-          <div className="section-title">
-            <CalendarDays size={20} />
-            今日の時間
-          </div>
-          <GaugeCanvas percentage={dailyPercentageRemaining} isDraining={isPhysicalScreenOn} scope="day" />
-        </div>
-      </div>
-
-      {/* Screen Detector & Status */}
-      <div className="dashboard-grid status-grid">
-        <div>
-          <ScreenStatus isScreenActive={isPhysicalScreenOn} onSimulateScreenOff={handleSimulateScreenOff} />
-        </div>
-        <div className="glass-panel how-it-works-card">
-            <div className="info-heading">
-              <ShieldCheck size={18} />
-              このアプリの考え方
-            </div>
-            <p>
-              画面を見ている間は時間が進み、端末をロックしたりスリープすると、その時間を「守れた時間」として記録します。少し画面を置いて、自分のための時間を増やしてみましょう。
-            </p>
-        </div>
-      </div>
-
-      {/* History Log Section */}
-      <HistoryLog logs={logs} onClearLogs={handleClearLogs} />
+          <button type="button" onClick={() => setIsHistoryOpen(true)}>
+            記録を見る <ArrowRight size={17} />
+          </button>
+        </section>
+      </main>
 
       {/* Preserved Alert Popup */}
       {recentPreservedMs !== null && (
-        <DrainModal preservedMs={recentPreservedMs} onClose={() => setRecentPreservedMs(null)} />
+        <DrainModal preservedMs={recentPreservedMs} onClose={closePreservedToast} />
       )}
 
       {/* Settings Modal */}
       {isSettingsOpen && (
         <SettingsModal
           config={config}
+          audioEnabled={audioEnabled}
+          isScreenActive={isPhysicalScreenOn}
           onSave={handleSaveConfig}
           onResetAll={handleResetAll}
-          onClose={() => setIsSettingsOpen(false)}
+          onToggleAudio={toggleAudio}
+          onSimulateScreenOff={handleSimulateScreenOff}
+          onClose={closeSettings}
         />
+      )}
+
+      {isHistoryOpen && (
+        <div className="modal-backdrop" onClick={closeHistory}>
+          <div className="history-dialog" role="dialog" aria-modal="true" aria-label="画面を離れた記録" onClick={(event) => event.stopPropagation()}>
+            <HistoryLog logs={logs} onClearLogs={handleClearLogs} onClose={closeHistory} />
+          </div>
+        </div>
       )}
     </div>
   );

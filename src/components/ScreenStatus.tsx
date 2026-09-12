@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Monitor, Sun, Moon, ShieldCheck } from 'lucide-react';
+import { Moon, ShieldCheck, Sun } from 'lucide-react';
 
 interface ScreenStatusProps {
   isScreenActive: boolean;
@@ -13,67 +13,49 @@ export const ScreenStatus: React.FC<ScreenStatusProps> = ({ isScreenActive, onSi
 
   const toggleWakeLock = async () => {
     if (!wakeLockSupported) return;
-
     if (isWakeLockActive && wakeLockObj) {
       await wakeLockObj.release();
       setWakeLockObj(null);
       setIsWakeLockActive(false);
-    } else {
-      try {
-        const sentinel = await navigator.wakeLock.request('screen');
-        setWakeLockObj(sentinel);
-        setIsWakeLockActive(true);
-        sentinel.addEventListener('release', () => {
-          setIsWakeLockActive(false);
-          setWakeLockObj(null);
-        });
-      } catch (err) {
-        console.warn('Wake Lock failed', err);
-      }
+      return;
+    }
+
+    try {
+      const sentinel = await navigator.wakeLock.request('screen');
+      setWakeLockObj(sentinel);
+      setIsWakeLockActive(true);
+      sentinel.addEventListener('release', () => {
+        setIsWakeLockActive(false);
+        setWakeLockObj(null);
+      });
+    } catch (error) {
+      console.warn('Wake Lock failed', error);
     }
   };
 
   return (
-    <div className="glass-panel">
-      <div className="section-title">
-        <Monitor size={20} />
-        スクリーンの状態
+    <div className="screen-settings">
+      <div className="screen-state-row">
+        <span>現在の状態</span>
+        <span className={`status-pill ${isScreenActive ? 'is-active' : ''}`}>
+          {isScreenActive ? <><Sun size={14} /> 画面はオン</> : <><Moon size={14} /> 画面はオフ</>}
+        </span>
       </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        <div className="screen-state-row">
-          <span className="screen-state-label">現在の状態</span>
-          <span className={`status-pill ${isScreenActive ? 'off' : ''}`}>
-            {isScreenActive ? (
-              <>
-                <Sun size={14} /> 画面はオン
-              </>
-            ) : (
-              <>
-                <Moon size={14} /> 画面はオフ
-              </>
-            )}
-          </span>
-        </div>
-
-        <p className="helper-text">
-          タブを切り替えても画面がついている間は計測が続きます。端末のロックやスリープで「画面を離れた時間」に切り替わります。
-        </p>
-
-        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
-          {wakeLockSupported && (
-            <button className={`btn-secondary ${isWakeLockActive ? 'active' : ''}`} onClick={toggleWakeLock}>
-              <Sun size={16} color={isWakeLockActive ? 'var(--accent-amber)' : 'inherit'} />
-              {isWakeLockActive ? '常時点灯を解除' : '画面を常時点灯'}
-            </button>
-          )}
-
-          <button className="btn-secondary btn-gentle" onClick={onSimulateScreenOff}>
-            <ShieldCheck size={16} />
-            画面オフを試す
-          </button>
-        </div>
-      </div>
+      <p className="settings-helper">
+        タブを切り替えても、端末の画面がついている間は計測が続きます。ロックやスリープ中は「画面を離れた時間」として記録します。
+      </p>
+      {wakeLockSupported && (
+        <button type="button" className="settings-action" onClick={toggleWakeLock}>
+          <Sun size={17} />
+          {isWakeLockActive ? '画面の常時点灯を解除' : '画面を常時点灯する'}
+        </button>
+      )}
+      <details className="developer-settings">
+        <summary>開発者向け</summary>
+        <button type="button" className="settings-action" onClick={onSimulateScreenOff}>
+          <ShieldCheck size={17} /> 画面オフの記録をテスト
+        </button>
+      </details>
     </div>
   );
 };
